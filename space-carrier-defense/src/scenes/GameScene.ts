@@ -1,0 +1,712 @@
+import Phaser from 'phaser';
+import { createGameTextures } from '../utils/textures';
+import { pick3Upgrades } from '../data/upgrades';
+
+type EnemyType = 'f' | 'c' | 'fr' | 'boss';
+type WavePhase = 'waiting' | 'spawning' | 'fighting' | 'clear';
+
+interface SpawnEntry { type: EnemyType; delay: number; }
+
+export class GameScene extends Phaser.Scene {
+  // ── state ──────────────────────────────────────────────
+  private hull!: number;
+  private maxHull!: number;
+  private points!: number;
+  private nextCardAt!: number;
+  private wave!: number;
+  private totalWaves!: number;
+  private gameMs!: number;
+  private dead!: boolean;
+
+  // ── upgrade stats ──────────────────────────────────────
+  private appliedUpgrades!: string[];
+  private turretCooldownBase!: number;
+  private turretDamage!: number;
+  private fighterDamage!: number;
+  private fighterSpeed!: number;
+  private carrierMaxSpeed!: number;
+  private weaponRange!: number;
+  private salvageSpeed!: number;
+  private salvageYield!: number;
+
+  // ── entities ───────────────────────────────────────────
+  private carrier!: Phaser.Physics.Arcade.Sprite;
+  private fighters!: Phaser.Physics.Arcade.Group;
+  private enemies!: Phaser.Physics.Arcade.Group;
+  private allyBullets!: Phaser.Physics.Arcade.Group;
+  private enemyBullets!: Phaser.Physics.Arcade.Group;
+  private debrisGroup!: Phaser.GameObjects.Group;
+  private salvageShips!: Phaser.Physics.Arcade.Group;
+
+  // ── timers / wave ──────────────────────────────────────
+  private turretTimer!: number;
+  private wavePhase!: WavePhase;
+  private waveTimer!: number;
+  private spawnQueue!: SpawnEntry[];
+  private spawnElapsed!: number;
+  private moveTarget!: Phaser.Math.Vector2 | null;
+
+  // ── ui ─────────────────────────────────────────────────
+  private hullFill!: Phaser.GameObjects.Rectangle;
+  private pointsText!: Phaser.GameObjects.Text;
+  private waveText!: Phaser.GameObjects.Text;
+  private timerText!: Phaser.GameObjects.Text;
+  private statusText!: Phaser.GameObjects.Text;
+  private moveGfx!: Phaser.GameObjects.Graphics;
+
+  constructor() { super({ key: 'GameScene' }); }
+
+  create() {
+    createGameTextures(this);
+    this.initState();
+    this.buildWorld();
+    this.buildGroups();
+    this.buildUI();
+    this.setupInput();
+    this.spawnInitialUnits(); // carrier must exist before colliders
+    this.setupColliders();
+    this.setupCamera();
+  }
+
+  // ════════════════════════════════════════════════════════
+  // INIT
+  // ════════════════════════════════════════════════════════
+
+  private initState() {
+    this.hull           = 100;
+    this.maxHull        = 100;
+    this.points         = 0;
+    this.nextCardAt     = 100;
+    this.wave           = 0;
+    this.totalWaves     = 5;
+    this.gameMs         = 0;
+    this.dead           = false;
+    this.appliedUpgrades = [];
+    this.moveTarget     = null;
+
+    this.turretCooldownBase = 1800;
+    this.turretDamage       = 10;
+    this.fighterDamage      = 8;
+    this.fighterSpeed       = 200;
+    this.carrierMaxSpeed    = 70;
+    this.weaponRange        = 260;
+    this.salvageSpeed       = 130;
+    this.salvageYield       = 15;
+    this.turretTimer        = this.turretCooldownBase;
+
+    this.wavePhase    = 'waiting';
+    this.waveTimer    = 3000;
+    this.spawnQueue   = [];
+    this.spawnElapsed = 0;
+  }
+
+  private buildWorld() {
+    this.physics.world.setBounds(-2000, -2000, 4000, 4000);
+
+    // Star field
+    const stars = this.add.graphics().setDepth(-10);
+    for (let i = 0; i < 350; i++) {
+      const x = Phaser.Math.Between(-2000, 2000);
+      const y = Phaser.Math.Between(-2000, 2000);
+      const big = Math.random() < 0.08;
+      stars.fillStyle(0xffffff, 0.25 + Math.random() * 0.65);
+      stars.fillCircle(x, y, big ? 2 : 1);
+    }
+  }
+
+  private buildGroups() {
+    this.fighters     = this.physics.add.group();
+    this.enemies      = this.physics.add.group();
+    this.allyBullets  = this.physics.add.group();
+    this.enemyBullets = this.physics.add.group();
+    this.debrisGroup  = this.add.group();
+    this.salvageShips = this.physics.add.group();
+  }
+
+  private buildUI() {
+    const D = 100;
+    this.add.rectangle(10, 10, 204, 18, 0x111111).setOrigin(0, 0).setScrollFactor(0).setDepth(D);
+    this.hullFill = this.add.rectangle(11, 11, 202, 16, 0x22cc44)
+      .setOrigin(0, 0).setScrollFactor(0).setDepth(D + 1);
+    this.add.text(14, 11, 'HULL', {
+      fontSize: '11px', color: '#aaffaa', fontFamily: 'monospace',
+    }).setOrigin(0, 0).setScrollFactor(0).setDepth(D + 2);
+
+    this.pointsText = this.add.text(10, 34, 'PTS: 0', {
+      fontSize: '14px', color: '#ffdd44', fontFamily: 'monospace',
+    }).setOrigin(0, 0).setScrollFactor(0).setDepth(D);
+
+    this.waveText = this.add.text(10, 54, 'WAVE: -', {
+      fontSize: '14px', color: '#88aaff', fontFamily: 'monospace',
+    }).setOrigin(0, 0).setScrollFactor(0).setDepth(D);
+
+    this.timerText = this.add.text(640, 12, '0:00', {
+      fontSize: '20px', color: '#ccddff', fontFamily: 'monospace',
+    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(D);
+
+    this.statusText = this.add.text(640, 80, '', {
+      fontSize: '26px', color: '#44ff88', fontFamily: 'monospace',
+      stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(D);
+
+    this.add.text(1270, 10,
+      'LEFT CLICK — Move Carrier', {
+      fontSize: '12px', color: '#556677', fontFamily: 'monospace',
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(D);
+
+    this.moveGfx = this.add.graphics().setDepth(50);
+  }
+
+  private setupInput() {
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (this.dead || this.scene.isActive('UpgradeScene')) return;
+      if (p.button !== 0) return;
+
+      const wx = this.cameras.main.scrollX + p.x;
+      const wy = this.cameras.main.scrollY + p.y;
+      this.moveTarget = new Phaser.Math.Vector2(wx, wy);
+
+      this.moveGfx.clear();
+      this.moveGfx.lineStyle(2, 0x4499ff, 0.9);
+      this.moveGfx.strokeCircle(wx, wy, 14);
+      this.moveGfx.lineStyle(1, 0x4499ff, 0.5);
+      this.moveGfx.strokeCircle(wx, wy, 6);
+
+      this.tweens.add({
+        targets: this.moveGfx,
+        alpha: 0,
+        duration: 700,
+        onComplete: () => {
+          this.moveGfx.setAlpha(1);
+          this.moveGfx.clear();
+        },
+      });
+    });
+  }
+
+  private setupColliders() {
+    this.physics.add.overlap(
+      this.allyBullets, this.enemies,
+      this.onAllyBulletHitEnemy as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined, this
+    );
+    this.physics.add.overlap(
+      this.enemyBullets, this.carrier,
+      this.onEnemyBulletHitCarrier as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined, this
+    );
+    this.physics.add.overlap(
+      this.enemies, this.carrier,
+      this.onEnemyRamCarrier as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined, this
+    );
+  }
+
+  private setupCamera() {
+    this.cameras.main.setBounds(-2000, -2000, 4000, 4000);
+    this.cameras.main.startFollow(this.carrier, true, 0.08, 0.08);
+  }
+
+  private spawnInitialUnits() {
+    this.carrier = this.physics.add.sprite(0, 0, 'carrier');
+    this.carrier.setMaxVelocity(this.carrierMaxSpeed);
+    this.carrier.setDrag(300);
+    (this.carrier.body as Phaser.Physics.Arcade.Body).setCircle(34, 16, 16);
+
+    for (let i = 0; i < 4; i++) this.addFighter();
+    this.addSalvageShip();
+  }
+
+  // ════════════════════════════════════════════════════════
+  // SPAWNING
+  // ════════════════════════════════════════════════════════
+
+  private addFighter() {
+    const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    const f = this.physics.add.sprite(
+      this.carrier.x + Math.cos(angle) * 90,
+      this.carrier.y + Math.sin(angle) * 90,
+      'fighter'
+    );
+    (f.body as Phaser.Physics.Arcade.Body).setCircle(6, 2, 2);
+    f.setData({ shootCd: 0, patrolAngle: angle, dmg: this.fighterDamage, spd: this.fighterSpeed });
+    this.fighters.add(f);
+  }
+
+  private addSalvageShip() {
+    const s = this.physics.add.sprite(
+      this.carrier.x + Phaser.Math.Between(-50, 50),
+      this.carrier.y + Phaser.Math.Between(-50, 50),
+      'salvage'
+    );
+    (s.body as Phaser.Physics.Arcade.Body).setCircle(8, 3, 1);
+    s.setData({ targetDebris: null });
+    this.salvageShips.add(s);
+  }
+
+  private spawnEnemy(type: EnemyType) {
+    const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+    const dist  = 680 + Phaser.Math.Between(0, 200);
+    const x = this.carrier.x + Math.cos(angle) * dist;
+    const y = this.carrier.y + Math.sin(angle) * dist;
+
+    const cfg: Record<EnemyType, { key: string; hp: number; dmg: number; spd: number; pts: number; r: number; ox: number; oy: number }> = {
+      f:    { key: 'enemy_f',    hp: 22,  dmg: 5,  spd: 150, pts: 10,  r: 6,  ox: 1,  oy: 1  },
+      c:    { key: 'enemy_c',    hp: 45,  dmg: 8,  spd: 105, pts: 20,  r: 8,  ox: 2,  oy: 2  },
+      fr:   { key: 'enemy_fr',   hp: 90,  dmg: 14, spd: 70,  pts: 45,  r: 11, ox: 4,  oy: 2  },
+      boss: { key: 'enemy_boss', hp: 320, dmg: 22, spd: 48,  pts: 200, r: 32, ox: 8,  oy: 8  },
+    };
+
+    const c = cfg[type];
+    const e = this.physics.add.sprite(x, y, c.key);
+    (e.body as Phaser.Physics.Arcade.Body).setCircle(c.r, c.ox, c.oy);
+    e.setData({ type, hp: c.hp, maxHp: c.hp, dmg: c.dmg, spd: c.spd, pts: c.pts, shootCd: Phaser.Math.Between(1000, 2500), lastRam: 0 });
+    this.enemies.add(e);
+  }
+
+  private spawnDebris(x: number, y: number, count: number) {
+    for (let i = 0; i < count; i++) {
+      const dx = x + Phaser.Math.Between(-35, 35);
+      const dy = y + Phaser.Math.Between(-35, 35);
+      const d = this.add.sprite(dx, dy, 'debris').setDepth(2);
+      d.setData({ collected: false });
+      this.debrisGroup.add(d);
+      this.tweens.add({
+        targets: d,
+        x: dx + Phaser.Math.Between(-25, 25),
+        y: dy + Phaser.Math.Between(-25, 25),
+        duration: 1800,
+        ease: 'Sine.easeOut',
+      });
+    }
+  }
+
+  // ════════════════════════════════════════════════════════
+  // WAVE MANAGEMENT
+  // ════════════════════════════════════════════════════════
+
+  private startWave() {
+    this.wave++;
+    this.wavePhase    = 'spawning';
+    this.spawnElapsed = 0;
+    this.spawnQueue   = this.buildQueue(this.wave);
+    this.waveText.setText(`WAVE: ${this.wave} / ${this.totalWaves}`);
+    this.flashText(this.statusText, `— WAVE ${this.wave} —`, '#88aaff', 1800);
+  }
+
+  private buildQueue(wave: number): SpawnEntry[] {
+    const q: SpawnEntry[] = [];
+    if (wave < this.totalWaves) {
+      const fCount = 3 + wave * 2;
+      for (let i = 0; i < fCount; i++) q.push({ type: 'f', delay: i * 500 });
+      if (wave >= 2) for (let i = 0; i < wave; i++) q.push({ type: 'c', delay: 3000 + i * 700 });
+      if (wave >= 3) q.push({ type: 'fr', delay: 6000 });
+      if (wave >= 4) q.push({ type: 'fr', delay: 7200 });
+    } else {
+      // Boss wave
+      q.push({ type: 'boss', delay: 500 });
+      for (let i = 0; i < 8; i++) q.push({ type: 'f', delay: 2000 + i * 400 });
+      for (let i = 0; i < 4; i++) q.push({ type: 'c', delay: 5500 + i * 600 });
+      for (let i = 0; i < 2; i++) q.push({ type: 'fr', delay: 8500 + i * 1000 });
+    }
+    return q.sort((a, b) => a.delay - b.delay);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // COMBAT
+  // ════════════════════════════════════════════════════════
+
+  private fireTurrets() {
+    const nearest = this.nearestEnemy(this.carrier.x, this.carrier.y, this.weaponRange * 1.3);
+    if (!nearest) return;
+    for (const ox of [-22, 22]) {
+      this.fireAllyBullet(this.carrier.x + ox, this.carrier.y, nearest, this.turretDamage);
+    }
+  }
+
+  private fireAllyBullet(fx: number, fy: number, target: Phaser.Physics.Arcade.Sprite, dmg: number) {
+    const b = this.physics.add.sprite(fx, fy, 'bullet_ally').setDepth(5);
+    const angle = Phaser.Math.Angle.Between(fx, fy, target.x, target.y);
+    b.setRotation(angle + Math.PI / 2);
+    (b.body as Phaser.Physics.Arcade.Body).setVelocity(Math.cos(angle) * 400, Math.sin(angle) * 400);
+    b.setData({ dmg });
+    this.allyBullets.add(b);
+    this.time.delayedCall(2200, () => { if (b.active) b.destroy(); });
+  }
+
+  private fireEnemyBullet(enemy: Phaser.Physics.Arcade.Sprite) {
+    const b = this.physics.add.sprite(enemy.x, enemy.y, 'bullet_enemy').setDepth(5);
+    const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, this.carrier.x, this.carrier.y);
+    (b.body as Phaser.Physics.Arcade.Body).setVelocity(Math.cos(angle) * 210, Math.sin(angle) * 210);
+    b.setData({ dmg: enemy.getData('dmg') as number });
+    this.enemyBullets.add(b);
+    this.time.delayedCall(3800, () => { if (b.active) b.destroy(); });
+  }
+
+  private nearestEnemy(x: number, y: number, range: number): Phaser.Physics.Arcade.Sprite | null {
+    let best: Phaser.Physics.Arcade.Sprite | null = null;
+    let minD = range;
+    for (const e of this.enemies.getChildren()) {
+      const es = e as Phaser.Physics.Arcade.Sprite;
+      if (!es.active) continue;
+      const d = Phaser.Math.Distance.Between(x, y, es.x, es.y);
+      if (d < minD) { minD = d; best = es; }
+    }
+    return best;
+  }
+
+  // ════════════════════════════════════════════════════════
+  // COLLISION CALLBACKS
+  // ════════════════════════════════════════════════════════
+
+  private onAllyBulletHitEnemy(
+    bullet: Phaser.GameObjects.GameObject,
+    enemy: Phaser.GameObjects.GameObject
+  ) {
+    const b = bullet as Phaser.Physics.Arcade.Sprite;
+    const e = enemy as Phaser.Physics.Arcade.Sprite;
+    if (!b.active || !e.active) return;
+    b.destroy();
+    const hp = (e.getData('hp') as number) - (b.getData('dmg') as number);
+    e.setData('hp', hp);
+    this.tweens.add({ targets: e, alpha: 0.3, duration: 70, yoyo: true });
+    if (hp <= 0) this.killEnemy(e);
+  }
+
+  private onEnemyBulletHitCarrier(
+    bullet: Phaser.GameObjects.GameObject,
+    _carrier: Phaser.GameObjects.GameObject
+  ) {
+    const b = bullet as Phaser.Physics.Arcade.Sprite;
+    if (!b.active) return;
+    b.destroy();
+    this.damage(b.getData('dmg') as number);
+  }
+
+  private onEnemyRamCarrier(
+    enemy: Phaser.GameObjects.GameObject,
+    _carrier: Phaser.GameObjects.GameObject
+  ) {
+    const e = enemy as Phaser.Physics.Arcade.Sprite;
+    if (!e.active) return;
+    const now = this.time.now;
+    if (now - (e.getData('lastRam') as number) < 1000) return;
+    e.setData('lastRam', now);
+    this.damage(e.getData('dmg') as number);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // EVENTS
+  // ════════════════════════════════════════════════════════
+
+  private killEnemy(e: Phaser.Physics.Arcade.Sprite) {
+    const pts = e.getData('pts') as number;
+    const debrisCount = Math.max(1, Math.ceil(pts / 10));
+    this.spawnDebris(e.x, e.y, debrisCount);
+    this.explode(e.x, e.y, e.getData('type') === 'boss' ? 90 : 32);
+    this.addPoints(pts * 0.25);
+    e.destroy();
+  }
+
+  private explode(x: number, y: number, size: number) {
+    const g = this.add.graphics().setDepth(10);
+    g.fillStyle(0xff7700, 1).fillCircle(x, y, size);
+    this.tweens.add({
+      targets: g, scaleX: 2.2, scaleY: 2.2, alpha: 0,
+      duration: 380, ease: 'Power2',
+      onComplete: () => g.destroy(),
+    });
+  }
+
+  private damage(amount: number) {
+    this.hull = Math.max(0, this.hull - amount);
+    this.cameras.main.flash(120, 90, 0, 0, true);
+    if (this.hull <= 0) this.gameOver();
+  }
+
+  private addPoints(amount: number) {
+    this.points += amount;
+    if (this.points >= this.nextCardAt) {
+      this.nextCardAt += 130;
+      this.triggerUpgrade();
+    }
+  }
+
+  private triggerUpgrade() {
+    const cards = pick3Upgrades(this.appliedUpgrades);
+    this.scene.pause();
+    this.scene.launch('UpgradeScene', {
+      cards,
+      onSelect: (id: string) => this.applyUpgrade(id),
+    });
+  }
+
+  private applyUpgrade(id: string) {
+    this.appliedUpgrades.push(id);
+    switch (id) {
+      case 'turret_rate':   this.turretCooldownBase = Math.max(500, this.turretCooldownBase * 0.7); break;
+      case 'turret_dmg':    this.turretDamage = Math.round(this.turretDamage * 1.25); break;
+      case 'turret_range':  this.weaponRange *= 1.2; break;
+      case 'fighter_add':   this.addFighter(); break;
+      case 'fighter_dmg':
+        this.fighterDamage = Math.round(this.fighterDamage * 1.25);
+        for (const f of this.fighters.getChildren())
+          (f as Phaser.Physics.Arcade.Sprite).setData('dmg', this.fighterDamage);
+        break;
+      case 'fighter_speed':
+        this.fighterSpeed = Math.round(this.fighterSpeed * 1.2);
+        for (const f of this.fighters.getChildren())
+          (f as Phaser.Physics.Arcade.Sprite).setData('spd', this.fighterSpeed);
+        break;
+      case 'hull_repair':   this.hull = Math.min(this.maxHull, this.hull + 20); break;
+      case 'hull_max':      this.maxHull += 20; this.hull += 20; break;
+      case 'salvage_speed': this.salvageSpeed = Math.round(this.salvageSpeed * 1.3); break;
+      case 'salvage_add':   this.addSalvageShip(); break;
+      case 'salvage_yield': this.salvageYield = Math.round(this.salvageYield * 1.5); break;
+      case 'carrier_speed':
+        this.carrierMaxSpeed = Math.round(this.carrierMaxSpeed * 1.15);
+        this.carrier.setMaxVelocity(this.carrierMaxSpeed);
+        break;
+    }
+  }
+
+  private gameOver() {
+    if (this.dead) return;
+    this.dead = true;
+    this.physics.pause();
+    this.cameras.main.flash(600, 120, 0, 0);
+    this.time.delayedCall(700, () => {
+      this.scene.start('GameOverScene', {
+        wave: this.wave, time: this.gameMs, points: Math.floor(this.points),
+      });
+    });
+  }
+
+  private victory() {
+    if (this.dead) return;
+    this.dead = true;
+    this.time.delayedCall(2500, () => {
+      this.scene.start('GameOverScene', {
+        wave: this.wave, time: this.gameMs, points: Math.floor(this.points), victory: true,
+      });
+    });
+    this.flashText(this.statusText, 'MISSION COMPLETE', '#ffdd44', 2400);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // UPDATE
+  // ════════════════════════════════════════════════════════
+
+  update(_time: number, delta: number) {
+    if (this.dead) return;
+    if (this.scene.isActive('UpgradeScene')) return;
+
+    this.gameMs += delta;
+
+    this.tickCarrier(delta);
+    this.tickFighters(delta);
+    this.tickEnemies(delta);
+    this.tickSalvageShips();
+    this.tickTurrets(delta);
+    this.tickWaves(delta);
+    this.tickUI();
+  }
+
+  private tickCarrier(delta: number) {
+    if (!this.moveTarget) { this.carrier.setVelocity(0, 0); return; }
+    const dist = Phaser.Math.Distance.Between(
+      this.carrier.x, this.carrier.y, this.moveTarget.x, this.moveTarget.y
+    );
+    if (dist < 14) { this.carrier.setVelocity(0, 0); this.moveTarget = null; return; }
+    this.physics.moveTo(this.carrier, this.moveTarget.x, this.moveTarget.y, this.carrierMaxSpeed);
+
+    // Slow rotation
+    const tAngle = Phaser.Math.Angle.Between(this.carrier.x, this.carrier.y, this.moveTarget.x, this.moveTarget.y);
+    const diff = Phaser.Math.Angle.Wrap(tAngle - Math.PI / 2 - this.carrier.rotation);
+    this.carrier.setRotation(this.carrier.rotation + diff * 0.035 * (delta / 16));
+  }
+
+  private tickFighters(delta: number) {
+    for (const go of this.fighters.getChildren()) {
+      const f = go as Phaser.Physics.Arcade.Sprite;
+      if (!f.active) continue;
+
+      let cd = (f.getData('shootCd') as number) - delta;
+      f.setData('shootCd', cd);
+
+      const target = this.nearestEnemy(f.x, f.y, this.weaponRange);
+
+      if (target) {
+        const dist = Phaser.Math.Distance.Between(f.x, f.y, target.x, target.y);
+        const angle = Phaser.Math.Angle.Between(f.x, f.y, target.x, target.y);
+        f.setRotation(angle + Math.PI / 2);
+
+        if (dist > 110) {
+          this.physics.moveTo(f, target.x, target.y, f.getData('spd') as number);
+        } else {
+          f.setVelocity(0, 0);
+          if (cd <= 0) {
+            this.fireAllyBullet(f.x, f.y, target, f.getData('dmg') as number);
+            f.setData('shootCd', 550 + Phaser.Math.Between(0, 180));
+          }
+        }
+      } else {
+        // Orbit carrier
+        let pa = (f.getData('patrolAngle') as number) + 0.0008 * delta;
+        f.setData('patrolAngle', pa);
+        const tx = this.carrier.x + Math.cos(pa) * 115;
+        const ty = this.carrier.y + Math.sin(pa) * 115;
+        const d = Phaser.Math.Distance.Between(f.x, f.y, tx, ty);
+        if (d > 18) {
+          this.physics.moveTo(f, tx, ty, 95);
+          f.setRotation(Phaser.Math.Angle.Between(f.x, f.y, tx, ty) + Math.PI / 2);
+        } else {
+          f.setVelocity(0, 0);
+        }
+      }
+    }
+  }
+
+  private tickEnemies(delta: number) {
+    for (const go of this.enemies.getChildren()) {
+      const e = go as Phaser.Physics.Arcade.Sprite;
+      if (!e.active) continue;
+
+      const dist = Phaser.Math.Distance.Between(e.x, e.y, this.carrier.x, this.carrier.y);
+      if (dist > 55) {
+        this.physics.moveTo(e, this.carrier.x, this.carrier.y, e.getData('spd') as number);
+      } else {
+        e.setVelocity(0, 0);
+      }
+
+      e.setRotation(Phaser.Math.Angle.Between(e.x, e.y, this.carrier.x, this.carrier.y) + Math.PI / 2);
+
+      let cd = (e.getData('shootCd') as number) - delta;
+      e.setData('shootCd', cd);
+      const type = e.getData('type') as EnemyType;
+      if (cd <= 0 && dist < 520) {
+        this.fireEnemyBullet(e);
+        const base = type === 'boss' ? 700 : type === 'fr' ? 1800 : type === 'c' ? 1400 : 2200;
+        e.setData('shootCd', base + Phaser.Math.Between(0, 400));
+      }
+
+      // HP tint
+      const hpFrac = (e.getData('hp') as number) / (e.getData('maxHp') as number);
+      if (hpFrac < 0.4) e.setTint(0xff4400);
+      else if (hpFrac < 0.7) e.setTint(0xff8800);
+      else e.clearTint();
+    }
+  }
+
+  private tickSalvageShips() {
+    for (const go of this.salvageShips.getChildren()) {
+      const s = go as Phaser.Physics.Arcade.Sprite;
+      if (!s.active) continue;
+
+      let target = s.getData('targetDebris') as Phaser.GameObjects.Sprite | null;
+
+      // Validate target
+      if (target && (!target.active || target.getData('collected'))) {
+        s.setData('targetDebris', null);
+        target = null;
+      }
+
+      if (target) {
+        const dist = Phaser.Math.Distance.Between(s.x, s.y, target.x, target.y);
+        if (dist < 18) {
+          target.setData('collected', true);
+          target.destroy();
+          s.setData('targetDebris', null);
+          this.addPoints(this.salvageYield);
+          this.explode(s.x, s.y, 8); // small sparkle
+        } else {
+          this.physics.moveTo(s, target.x, target.y, this.salvageSpeed);
+          s.setRotation(Phaser.Math.Angle.Between(s.x, s.y, target.x, target.y) + Math.PI / 2);
+        }
+      } else {
+        // Find nearest uncollected debris
+        let nearest: Phaser.GameObjects.Sprite | null = null;
+        let minD = 700;
+        for (const d of this.debrisGroup.getChildren()) {
+          const ds = d as Phaser.GameObjects.Sprite;
+          if (!ds.active || ds.getData('collected')) continue;
+          const dd = Phaser.Math.Distance.Between(s.x, s.y, ds.x, ds.y);
+          if (dd < minD) { minD = dd; nearest = ds; }
+        }
+        if (nearest) {
+          s.setData('targetDebris', nearest);
+        } else {
+          // Return to carrier vicinity
+          const dc = Phaser.Math.Distance.Between(s.x, s.y, this.carrier.x, this.carrier.y);
+          if (dc > 110) {
+            this.physics.moveTo(s, this.carrier.x, this.carrier.y, this.salvageSpeed * 0.65);
+          } else {
+            s.setVelocity(0, 0);
+          }
+        }
+      }
+    }
+  }
+
+  private tickTurrets(delta: number) {
+    this.turretTimer -= delta;
+    if (this.turretTimer <= 0) {
+      this.fireTurrets();
+      this.turretTimer = this.turretCooldownBase;
+    }
+  }
+
+  private tickWaves(delta: number) {
+    if (this.wavePhase === 'waiting') {
+      this.waveTimer -= delta;
+      if (this.waveTimer <= 0) this.startWave();
+      return;
+    }
+
+    if (this.wavePhase === 'spawning') {
+      this.spawnElapsed += delta;
+      while (this.spawnQueue.length > 0 && this.spawnQueue[0].delay <= this.spawnElapsed) {
+        this.spawnEnemy(this.spawnQueue.shift()!.type);
+      }
+      if (this.spawnQueue.length === 0) this.wavePhase = 'fighting';
+    }
+
+    if (this.wavePhase === 'fighting') {
+      if (this.enemies.countActive() === 0) {
+        this.wavePhase = 'clear';
+        if (this.wave >= this.totalWaves) {
+          this.victory();
+        } else {
+          this.flashText(this.statusText, 'WAVE CLEARED', '#44ff88', 1600);
+          this.waveTimer = 4500;
+          this.wavePhase = 'waiting';
+        }
+      }
+    }
+  }
+
+  private tickUI() {
+    const frac = Math.max(0, this.hull / this.maxHull);
+    this.hullFill.setDisplaySize(202 * frac, 16);
+    this.hullFill.setFillStyle(frac > 0.5 ? 0x22cc44 : frac > 0.25 ? 0xdd9900 : 0xdd2222);
+
+    this.pointsText.setText(`PTS: ${Math.floor(this.points)}`);
+
+    const sec = Math.floor(this.gameMs / 1000);
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    this.timerText.setText(`${m}:${s.toString().padStart(2, '0')}`);
+  }
+
+  // ════════════════════════════════════════════════════════
+  // HELPERS
+  // ════════════════════════════════════════════════════════
+
+  private flashText(text: Phaser.GameObjects.Text, msg: string, color: string, duration: number) {
+    text.setText(msg).setColor(color).setAlpha(1);
+    this.tweens.add({
+      targets: text, alpha: 0, delay: duration - 400, duration: 400,
+      onComplete: () => text.setText(''),
+    });
+  }
+}

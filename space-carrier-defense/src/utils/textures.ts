@@ -1,0 +1,107 @@
+export function createGameTextures(scene: Phaser.Scene): void {
+  if (scene.textures.exists('carrier')) return;
+
+  const g = scene.add.graphics();
+
+  // Carrier (100x100): large hexagon, dark blue fill
+  g.clear();
+  g.fillStyle(0x0d2255, 1);
+  g.lineStyle(3, 0x4488ff, 1);
+  fillHex(g, 50, 50, 38);
+  g.lineStyle(3, 0x4488ff, 1);
+  strokeHex(g, 50, 50, 38);
+  g.fillStyle(0x88ccff, 1);
+  g.fillCircle(50, 22, 5);
+  g.generateTexture('carrier', 100, 100);
+
+  // Fighter (16x16): small circle, cyan-blue
+  g.clear();
+  g.fillStyle(0x2288ff, 1);
+  g.fillCircle(8, 8, 6);
+  g.lineStyle(1, 0x88ccff, 1);
+  g.strokeCircle(8, 8, 6);
+  g.fillStyle(0xcceeFF, 1);
+  g.fillTriangle(8, 2, 11, 8, 5, 8);
+  g.generateTexture('fighter', 16, 16);
+
+  // Salvage Ship (22x18): diamond, teal
+  g.clear();
+  g.fillStyle(0x007766, 1);
+  g.lineStyle(1, 0x33ffdd, 1);
+  g.fillPoints([{ x: 11, y: 1 }, { x: 21, y: 9 }, { x: 11, y: 17 }, { x: 1, y: 9 }], true);
+  g.strokePoints([{ x: 11, y: 1 }, { x: 21, y: 9 }, { x: 11, y: 17 }, { x: 1, y: 9 }], true);
+  g.generateTexture('salvage', 22, 18);
+
+  // Enemy Fighter (14x14): circle, yellow
+  g.clear();
+  g.fillStyle(0xccaa00, 1);
+  g.fillCircle(7, 7, 6);
+  g.lineStyle(1, 0xffee44, 1);
+  g.strokeCircle(7, 7, 6);
+  g.generateTexture('enemy_f', 14, 14);
+
+  // Enemy Corvette (20x20): triangle, orange
+  g.clear();
+  g.fillStyle(0xdd7700, 1);
+  g.lineStyle(1, 0xffaa33, 1);
+  g.fillTriangle(10, 1, 19, 19, 1, 19);
+  g.strokeTriangle(10, 1, 19, 19, 1, 19);
+  g.generateTexture('enemy_c', 20, 20);
+
+  // Enemy Frigate (30x26): larger triangle, orange-red
+  g.clear();
+  g.fillStyle(0xcc4400, 1);
+  g.lineStyle(2, 0xff7733, 1);
+  g.fillTriangle(15, 1, 29, 25, 1, 25);
+  g.strokeTriangle(15, 1, 29, 25, 1, 25);
+  g.generateTexture('enemy_fr', 30, 26);
+
+  // Boss Battlecruiser (80x80): large hexagon, deep red
+  g.clear();
+  g.fillStyle(0x660000, 1);
+  g.lineStyle(3, 0xff3311, 1);
+  fillHex(g, 40, 40, 35);
+  g.lineStyle(3, 0xff3311, 1);
+  strokeHex(g, 40, 40, 35);
+  g.fillStyle(0xff2200, 1);
+  g.fillCircle(40, 40, 10);
+  g.generateTexture('enemy_boss', 80, 80);
+
+  // Ally bullet (4x10)
+  g.clear();
+  g.fillStyle(0x66ffff, 1);
+  g.fillRect(1, 0, 2, 9);
+  g.generateTexture('bullet_ally', 4, 10);
+
+  // Enemy bullet (7x7)
+  g.clear();
+  g.fillStyle(0xff4422, 1);
+  g.fillCircle(3, 3, 3);
+  g.generateTexture('bullet_enemy', 7, 7);
+
+  // Debris (10x10): cross, gray
+  g.clear();
+  g.fillStyle(0x667788, 1);
+  g.fillRect(4, 0, 2, 10);
+  g.fillRect(0, 4, 10, 2);
+  g.generateTexture('debris', 10, 10);
+
+  g.destroy();
+}
+
+function hexPts(cx: number, cy: number, r: number) {
+  const pts = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i - Math.PI / 6;
+    pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+  }
+  return pts;
+}
+
+function fillHex(g: Phaser.GameObjects.Graphics, cx: number, cy: number, r: number) {
+  g.fillPoints(hexPts(cx, cy, r), true);
+}
+
+function strokeHex(g: Phaser.GameObjects.Graphics, cx: number, cy: number, r: number) {
+  g.strokePoints(hexPts(cx, cy, r), true);
+}
