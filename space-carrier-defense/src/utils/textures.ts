@@ -12,6 +12,20 @@ export function createGameTextures(scene: Phaser.Scene): void {
     sg.destroy();
   }
 
+  // Near-field stars — fewer but bigger/brighter dots, scroll faster for depth
+  if (!scene.textures.exists('nearfield_tile')) {
+    const ng = scene.add.graphics();
+    for (let i = 0; i < 22; i++) {
+      const x = Math.floor(Math.random() * 512);
+      const y = Math.floor(Math.random() * 512);
+      const r = 1 + Math.random() * 2.5;
+      ng.fillStyle(0xffffff, 0.55 + Math.random() * 0.45);
+      ng.fillCircle(x, y, r);
+    }
+    ng.generateTexture('nearfield_tile', 512, 512);
+    ng.destroy();
+  }
+
   if (scene.textures.exists('carrier')) return;
 
   const g = scene.add.graphics();

@@ -51,6 +51,7 @@ export class GameScene extends Phaser.Scene {
 
   // ── background ─────────────────────────────────────────
   private starField!: Phaser.GameObjects.TileSprite;
+  private nearField!: Phaser.GameObjects.TileSprite;
 
   // ── hud ────────────────────────────────────────────────
   private hullFill!: Phaser.GameObjects.Rectangle;
@@ -119,10 +120,15 @@ export class GameScene extends Phaser.Scene {
   private buildWorld() {
     this.physics.world.setBounds(-2000, -2000, 4000, 4000);
 
-    // Parallax star field: TileSprite fixed to camera, scrolled manually
+    // Far stars — 0.15× scroll (deep background)
     this.starField = this.add.tileSprite(640, 360, 1280, 720, 'stars_tile')
       .setScrollFactor(0)
       .setDepth(-10);
+
+    // Near-field stars — 0.75× scroll (zoom past as carrier moves)
+    this.nearField = this.add.tileSprite(640, 360, 1280, 720, 'nearfield_tile')
+      .setScrollFactor(0)
+      .setDepth(-9);
   }
 
   private buildGroups() {
@@ -286,7 +292,7 @@ export class GameScene extends Phaser.Scene {
 
   private setupCamera() {
     this.cameras.main.setBounds(-2000, -2000, 4000, 4000);
-    this.cameras.main.startFollow(this.carrier, true, 0.08, 0.08);
+    this.cameras.main.startFollow(this.carrier, false, 0.08, 0.08);
   }
 
   private spawnInitialUnits() {
@@ -691,6 +697,8 @@ export class GameScene extends Phaser.Scene {
     // Always update parallax (even when paused/dead so camera lag looks natural)
     this.starField.tilePositionX = this.cameras.main.scrollX * 0.15;
     this.starField.tilePositionY = this.cameras.main.scrollY * 0.15;
+    this.nearField.tilePositionX = this.cameras.main.scrollX * 0.75;
+    this.nearField.tilePositionY = this.cameras.main.scrollY * 0.75;
 
     if (this.dead) return;
     if (this.scene.isActive('UpgradeScene')) return;
@@ -706,18 +714,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tickCarrier(delta: number) {
-    if (!this.moveTarget) { this.carrier.setVelocity(0, 0); return; }
+    if (!this.moveTarget) return; // drag decelerates naturally
+
     const dist = Phaser.Math.Distance.Between(
       this.carrier.x, this.carrier.y, this.moveTarget.x, this.moveTarget.y
     );
-    if (dist < 14) { this.carrier.setVelocity(0, 0); this.moveTarget = null; return; }
-    this.physics.moveTo(this.carrier, this.moveTarget.x, this.moveTarget.y, this.carrierMaxSpeed);
+    if (dist < 12) {
+      this.carrier.setVelocity(0, 0);
+      this.moveTarget = null;
+      return;
+    }
 
-    const tAngle = Phaser.Math.Angle.Between(
+    const angle = Phaser.Math.Angle.Between(
       this.carrier.x, this.carrier.y, this.moveTarget.x, this.moveTarget.y
     );
-    const diff = Phaser.Math.Angle.Wrap(tAngle - Math.PI / 2 - this.carrier.rotation);
-    this.carrier.setRotation(this.carrier.rotation + diff * 0.035 * (delta / 16));
+    // Slow down proportionally when close — smooth deceleration
+    const spd = Math.min(dist * 2.0, this.carrierMaxSpeed);
+    this.carrier.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
+
+    // Bow (top of texture, y=7) points forward — requires +PI/2 offset
+    const diff = Phaser.Math.Angle.Wrap(angle + Math.PI / 2 - this.carrier.rotation);
+    this.carrier.setRotation(this.carrier.rotation + diff * 0.06 * (delta / 16));
   }
 
   private tickFighters(delta: number) {
