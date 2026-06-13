@@ -511,8 +511,9 @@ export class GameScene extends Phaser.Scene {
     const b = bullet as Phaser.Physics.Arcade.Sprite;
     const e = enemy as Phaser.Physics.Arcade.Sprite;
     if (!b.active || !e.active) return;
+    const dmg = b.getData('dmg') as number; // read BEFORE destroy — data is cleared on destroy()
     b.destroy();
-    const hp = (e.getData('hp') as number) - (b.getData('dmg') as number);
+    const hp = (e.getData('hp') as number) - dmg;
     e.setData('hp', hp);
     this.tweens.add({ targets: e, alpha: 0.3, duration: 70, yoyo: true });
     if (hp <= 0) this.killEnemy(e);
@@ -524,8 +525,9 @@ export class GameScene extends Phaser.Scene {
   ) {
     const b = bullet as Phaser.Physics.Arcade.Sprite;
     if (!b.active) return;
+    const dmg = b.getData('dmg') as number; // read BEFORE destroy
     b.destroy();
-    this.damage(b.getData('dmg') as number);
+    this.damage(dmg);
   }
 
   private onEnemyRamCarrier(
