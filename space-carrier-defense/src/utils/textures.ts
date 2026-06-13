@@ -1,18 +1,70 @@
 export function createGameTextures(scene: Phaser.Scene): void {
+  // Stars tile — always create if missing (needed before scene restart guard)
+  if (!scene.textures.exists('stars_tile')) {
+    const sg = scene.add.graphics();
+    for (let i = 0; i < 200; i++) {
+      const x = Math.floor(Math.random() * 512);
+      const y = Math.floor(Math.random() * 512);
+      sg.fillStyle(0xffffff, 0.2 + Math.random() * 0.7);
+      sg.fillCircle(x, y, Math.random() < 0.1 ? 2 : 1);
+    }
+    sg.generateTexture('stars_tile', 512, 512);
+    sg.destroy();
+  }
+
   if (scene.textures.exists('carrier')) return;
 
   const g = scene.add.graphics();
 
-  // Carrier (100x100): large hexagon, dark blue fill
-  g.clear();
-  g.fillStyle(0x0d2255, 1);
-  g.lineStyle(3, 0x4488ff, 1);
-  fillHex(g, 50, 50, 38);
-  g.lineStyle(3, 0x4488ff, 1);
-  strokeHex(g, 50, 50, 38);
-  g.fillStyle(0x88ccff, 1);
-  g.fillCircle(50, 22, 5);
-  g.generateTexture('carrier', 100, 100);
+  // Carrier (100x100): pentagon bow + tapered hull + dual engine nacelles
+  {
+    g.clear();
+    const hull = [
+      { x: 50, y: 7  },   // bow tip
+      { x: 66, y: 26 },   // port bow
+      { x: 70, y: 38 },   // port hull join
+      { x: 67, y: 64 },   // port stern
+      { x: 33, y: 64 },   // starboard stern
+      { x: 30, y: 38 },   // starboard hull join
+      { x: 34, y: 26 },   // starboard bow
+    ];
+    g.fillStyle(0x0d1a44, 1);
+    g.fillPoints(hull, true);
+    g.lineStyle(2, 0x2255cc, 1);
+    g.strokePoints(hull, true);
+
+    // Engine nacelles (stern, stick out past hull)
+    g.fillStyle(0x091520, 1);
+    g.fillRect(16, 59, 15, 26);
+    g.fillRect(69, 59, 15, 26);
+    g.lineStyle(1, 0x1a3355, 1);
+    g.strokeRect(16, 59, 15, 26);
+    g.strokeRect(69, 59, 15, 26);
+
+    // Engine exhaust glow
+    g.fillStyle(0x001266, 1);
+    g.fillCircle(23, 82, 6);
+    g.fillCircle(77, 82, 6);
+    g.fillStyle(0x2244ee, 1);
+    g.fillCircle(23, 82, 3);
+    g.fillCircle(77, 82, 3);
+
+    // Bridge / command circle (forward area)
+    g.fillStyle(0x0e2266, 1);
+    g.fillCircle(50, 31, 8);
+    g.lineStyle(1.5, 0x4477ff, 1);
+    g.strokeCircle(50, 31, 8);
+
+    // Bow center accent line
+    g.lineStyle(1, 0x3366cc, 0.7);
+    g.lineBetween(50, 7, 50, 24);
+
+    // Hull deck stripe
+    g.lineStyle(1, 0x1a2a55, 0.8);
+    g.lineBetween(36, 49, 64, 49);
+
+    g.generateTexture('carrier', 100, 100);
+  }
 
   // Fighter (16x16): small circle, cyan-blue
   g.clear();
@@ -56,7 +108,7 @@ export function createGameTextures(scene: Phaser.Scene): void {
   g.strokeTriangle(15, 1, 29, 25, 1, 25);
   g.generateTexture('enemy_fr', 30, 26);
 
-  // Boss Battlecruiser (80x80): large hexagon, deep red
+  // Boss Battlecruiser (80x80): hexagon, deep red
   g.clear();
   g.fillStyle(0x660000, 1);
   g.lineStyle(3, 0xff3311, 1);
@@ -67,11 +119,13 @@ export function createGameTextures(scene: Phaser.Scene): void {
   g.fillCircle(40, 40, 10);
   g.generateTexture('enemy_boss', 80, 80);
 
-  // Ally bullet (4x10)
+  // Ally bullet (6x14) — bright cyan-white, visible at range
   g.clear();
-  g.fillStyle(0x66ffff, 1);
-  g.fillRect(1, 0, 2, 9);
-  g.generateTexture('bullet_ally', 4, 10);
+  g.fillStyle(0x88ffff, 1);
+  g.fillRect(0, 0, 6, 14);
+  g.fillStyle(0xffffff, 0.7);
+  g.fillRect(2, 0, 2, 8);
+  g.generateTexture('bullet_ally', 6, 14);
 
   // Enemy bullet (7x7)
   g.clear();
