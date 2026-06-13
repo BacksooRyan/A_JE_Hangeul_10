@@ -154,6 +154,13 @@ export function createGameTextures(scene: Phaser.Scene): void {
   g.fillRect(0, 4, 10, 2);
   g.generateTexture('debris', 10, 10);
 
+  // Explosion (64x64): pre-baked for cheap sprite-based blasts
+  g.clear();
+  g.fillStyle(0xffdd44, 1);  g.fillCircle(32, 32, 28);
+  g.fillStyle(0xff7700, 0.8); g.fillCircle(32, 32, 18);
+  g.fillStyle(0xffffff, 0.6); g.fillCircle(32, 32, 8);
+  g.generateTexture('explosion', 64, 64);
+
   g.destroy();
 }
 

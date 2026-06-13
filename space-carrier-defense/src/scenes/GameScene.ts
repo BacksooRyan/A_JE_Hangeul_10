@@ -47,7 +47,7 @@ export class GameScene extends Phaser.Scene {
   private waveTimer!: number;
   private spawnQueue!: SpawnEntry[];
   private spawnElapsed!: number;
-  private moveTarget!: Phaser.Math.Vector2 | null;
+  private moveAngle!: number | null;
 
   // ── background ─────────────────────────────────────────
   private starField!: Phaser.GameObjects.TileSprite;
@@ -99,7 +99,7 @@ export class GameScene extends Phaser.Scene {
     this.carrierSelected = false;
     this.cmdMode         = 'none';
     this.appliedUpgrades = [];
-    this.moveTarget      = null;
+    this.moveAngle       = null;
 
     this.turretCooldownBase = 1800;
     this.turretDamage       = 10;
@@ -233,7 +233,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.cmdHoldBg.on('pointerdown', () => {
-      this.moveTarget = null;
+      this.moveAngle = null;
       this.carrier.setVelocity(0, 0);
       this.exitMoveMode();
       // Brief hold flash
@@ -335,16 +335,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   private executeMove(wx: number, wy: number) {
-    this.moveTarget = new Phaser.Math.Vector2(wx, wy);
+    this.moveAngle = Phaser.Math.Angle.Between(
+      this.carrier.x, this.carrier.y, wx, wy
+    );
     this.exitMoveMode();
 
+    // Brief direction marker at click point
     this.moveGfx.clear();
     this.moveGfx.lineStyle(2, 0x44ffaa, 0.9);
     this.moveGfx.strokeCircle(wx, wy, 14);
     this.moveGfx.lineStyle(1, 0x44ffaa, 0.5);
     this.moveGfx.strokeCircle(wx, wy, 6);
     this.tweens.add({
-      targets: this.moveGfx, alpha: 0, duration: 800,
+      targets: this.moveGfx, alpha: 0, duration: 600,
       onComplete: () => { this.moveGfx.setAlpha(1); this.moveGfx.clear(); },
     });
   }
@@ -460,10 +463,8 @@ export class GameScene extends Phaser.Scene {
       const by = this.carrier.y;
       this.fireAllyBullet(bx, by, nearest, this.turretDamage);
 
-      // Muzzle flash
-      const flash = this.add.graphics().setDepth(12);
-      flash.fillStyle(0xaaddff, 0.85);
-      flash.fillCircle(bx, by, 9);
+      // Muzzle flash — Arc shape is a single WebGL primitive, much cheaper than Graphics
+      const flash = this.add.circle(bx, by, 9, 0xaaddff, 0.85).setDepth(12);
       this.time.delayedCall(55, () => flash.destroy());
     }
   }
@@ -552,12 +553,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private explode(x: number, y: number, size: number) {
-    const g = this.add.graphics().setDepth(10);
-    g.fillStyle(0xff7700, 1).fillCircle(x, y, size);
+    // Pre-baked sprite — far cheaper than per-frame Graphics draw commands
+    const s = this.add.sprite(x, y, 'explosion').setDepth(10);
+    const sc = size / 32;
+    s.setScale(sc * 0.4);
     this.tweens.add({
-      targets: g, scaleX: 2.2, scaleY: 2.2, alpha: 0,
+      targets: s, scaleX: sc * 2.2, scaleY: sc * 2.2, alpha: 0,
       duration: 380, ease: 'Power2',
-      onComplete: () => g.destroy(),
+      onComplete: () => s.destroy(),
     });
   }
 
@@ -714,26 +717,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tickCarrier(delta: number) {
-    if (!this.moveTarget) return; // drag decelerates naturally
+    if (this.moveAngle === null) return; // drag decelerates naturally when HOLD
 
-    const dist = Phaser.Math.Distance.Between(
-      this.carrier.x, this.carrier.y, this.moveTarget.x, this.moveTarget.y
+    this.carrier.setVelocity(
+      Math.cos(this.moveAngle) * this.carrierMaxSpeed,
+      Math.sin(this.moveAngle) * this.carrierMaxSpeed
     );
-    if (dist < 12) {
-      this.carrier.setVelocity(0, 0);
-      this.moveTarget = null;
-      return;
-    }
-
-    const angle = Phaser.Math.Angle.Between(
-      this.carrier.x, this.carrier.y, this.moveTarget.x, this.moveTarget.y
-    );
-    // Slow down proportionally when close — smooth deceleration
-    const spd = Math.min(dist * 2.0, this.carrierMaxSpeed);
-    this.carrier.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
 
     // Bow (top of texture, y=7) points forward — requires +PI/2 offset
-    const diff = Phaser.Math.Angle.Wrap(angle + Math.PI / 2 - this.carrier.rotation);
+    const diff = Phaser.Math.Angle.Wrap(this.moveAngle + Math.PI / 2 - this.carrier.rotation);
     this.carrier.setRotation(this.carrier.rotation + diff * 0.06 * (delta / 16));
   }
 
