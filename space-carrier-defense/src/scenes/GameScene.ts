@@ -292,7 +292,7 @@ export class GameScene extends Phaser.Scene {
 
   private setupCamera() {
     this.cameras.main.setBounds(-2000, -2000, 4000, 4000);
-    this.cameras.main.startFollow(this.carrier, false, 0.08, 0.08);
+    this.cameras.main.startFollow(this.carrier, false, 0.12, 0.12);
   }
 
   private spawnInitialUnits() {
@@ -470,22 +470,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private fireAllyBullet(fx: number, fy: number, target: Phaser.Physics.Arcade.Sprite, dmg: number) {
-    const b = this.physics.add.sprite(fx, fy, 'bullet_ally').setDepth(5);
     const angle = Phaser.Math.Angle.Between(fx, fy, target.x, target.y);
-    b.setRotation(angle + Math.PI / 2);
-    (b.body as Phaser.Physics.Arcade.Body).setVelocity(Math.cos(angle) * 400, Math.sin(angle) * 400);
+    // group.create() is the canonical way — avoids body-reset from add() on pre-existing bodies
+    const b = this.allyBullets.create(fx, fy, 'bullet_ally') as Phaser.Physics.Arcade.Sprite;
+    b.setDepth(5).setRotation(angle + Math.PI / 2);
+    b.setVelocity(Math.cos(angle) * 400, Math.sin(angle) * 400);
     b.setData({ dmg });
-    this.allyBullets.add(b);
-    this.time.delayedCall(2200, () => { if (b.active) b.destroy(); });
+    this.time.delayedCall(2200, () => { if (b?.active) b.destroy(); });
   }
 
   private fireEnemyBullet(enemy: Phaser.Physics.Arcade.Sprite) {
-    const b = this.physics.add.sprite(enemy.x, enemy.y, 'bullet_enemy').setDepth(5);
     const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, this.carrier.x, this.carrier.y);
-    (b.body as Phaser.Physics.Arcade.Body).setVelocity(Math.cos(angle) * 210, Math.sin(angle) * 210);
+    const b = this.enemyBullets.create(enemy.x, enemy.y, 'bullet_enemy') as Phaser.Physics.Arcade.Sprite;
+    b.setDepth(5);
+    b.setVelocity(Math.cos(angle) * 300, Math.sin(angle) * 300);
     b.setData({ dmg: enemy.getData('dmg') as number });
-    this.enemyBullets.add(b);
-    this.time.delayedCall(3800, () => { if (b.active) b.destroy(); });
+    this.time.delayedCall(3500, () => { if (b?.active) b.destroy(); });
   }
 
   private nearestEnemy(x: number, y: number, range: number): Phaser.Physics.Arcade.Sprite | null {
@@ -697,6 +697,9 @@ export class GameScene extends Phaser.Scene {
   // ════════════════════════════════════════════════════════
 
   update(_time: number, delta: number) {
+    // Cap delta — prevents large physics steps on mobile frame drops
+    const dt = Math.min(delta, 50);
+
     // Always update parallax (even when paused/dead so camera lag looks natural)
     this.starField.tilePositionX = this.cameras.main.scrollX * 0.15;
     this.starField.tilePositionY = this.cameras.main.scrollY * 0.15;
@@ -706,13 +709,13 @@ export class GameScene extends Phaser.Scene {
     if (this.dead) return;
     if (this.scene.isActive('UpgradeScene')) return;
 
-    this.gameMs += delta;
-    this.tickCarrier(delta);
-    this.tickFighters(delta);
-    this.tickEnemies(delta);
+    this.gameMs += dt;
+    this.tickCarrier(dt);
+    this.tickFighters(dt);
+    this.tickEnemies(dt);
     this.tickSalvageShips();
-    this.tickTurrets(delta);
-    this.tickWaves(delta);
+    this.tickTurrets(dt);
+    this.tickWaves(dt);
     this.tickUI();
   }
 
