@@ -18,6 +18,10 @@
 - 바뀐 영역만 다시 그리는 **Partial Update** 적용
 - **자주 쓰는 글자 캐싱**으로 속도 개선
 
+## 이 저장소의 다른 프로젝트
+- **[space-carrier-defense](space-carrier-defense/)**: Phaser 3 + Vite로 만든 우주 캐리어 디펜스 웹 게임 (GitHub Pages 루트에 배포)
+- **[life-calc](life-calc/)**: D-day·퍼센트·부가세·할인율·평수·단위 변환을 한 곳에 모은 생활 계산기 웹앱 (GitHub Pages `/calc/` 경로에 배포)
+
 ## 예제 코드
 ```cpp
 #include "korean_font.h"

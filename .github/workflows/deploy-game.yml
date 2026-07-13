@@ -1,4 +1,4 @@
-name: Deploy Space Carrier Defense to GitHub Pages
+name: Deploy site (game + life-calc) to GitHub Pages
 
 on:
   push:
@@ -35,6 +35,11 @@ jobs:
       - name: Build
         working-directory: space-carrier-defense
         run: npm run build
+
+      - name: Add life-calc static app under /calc/
+        run: |
+          mkdir -p space-carrier-defense/dist/calc
+          cp -r life-calc/. space-carrier-defense/dist/calc/
 
       - uses: actions/configure-pages@v5
 

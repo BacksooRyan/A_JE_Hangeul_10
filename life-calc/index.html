@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="D-day, 퍼센트, 부가세, 할인율, 평수, 단위 변환까지 — 자주 쓰는 생활 계산기를 한 곳에" />
+  <title>생활 계산기</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧮</text></svg>" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>🧮 생활 계산기</h1>
+    <p class="tagline">사소하지만 자주 쓰는 계산, 한 곳에서</p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="계산기 선택">
+    <button class="tab" data-tab="dday" role="tab">📅 날짜·D-day</button>
+    <button class="tab" data-tab="percent" role="tab">％ 퍼센트</button>
+    <button class="tab" data-tab="vat" role="tab">🧾 부가세</button>
+    <button class="tab" data-tab="discount" role="tab">🏷️ 할인율</button>
+    <button class="tab" data-tab="pyeong" role="tab">🏠 평수</button>
+    <button class="tab" data-tab="unit" role="tab">📐 단위 변환</button>
+  </nav>
+
+  <main>
+    <!-- 날짜·D-day -->
+    <section class="panel" id="panel-dday" role="tabpanel">
+      <div class="card">
+        <h2>D-day 계산</h2>
+        <label>목표 날짜
+          <input type="date" id="dday-target" />
+        </label>
+        <div class="result big" id="dday-result" aria-live="polite">날짜를 선택하세요</div>
+      </div>
+      <div class="card">
+        <h2>두 날짜 사이 일수</h2>
+        <div class="row">
+          <label>시작일 <input type="date" id="between-start" /></label>
+          <label>종료일 <input type="date" id="between-end" /></label>
+        </div>
+        <div class="result" id="between-result" aria-live="polite">두 날짜를 선택하세요</div>
+      </div>
+      <div class="card">
+        <h2>N일 후/전 날짜</h2>
+        <div class="row">
+          <label>기준일 <input type="date" id="after-base" /></label>
+          <label>일수 (음수는 이전) <input type="number" id="after-days" placeholder="예: 100" /></label>
+        </div>
+        <div class="result" id="after-result" aria-live="polite">기준일과 일수를 입력하세요</div>
+      </div>
+    </section>
+
+    <!-- 퍼센트 -->
+    <section class="panel" id="panel-percent" role="tabpanel">
+      <div class="card">
+        <h2>전체의 몇 %는 얼마?</h2>
+        <div class="row inline-sentence">
+          <input type="text" inputmode="decimal" id="pct1-total" placeholder="50,000" />
+          <span>의</span>
+          <input type="text" inputmode="decimal" id="pct1-rate" placeholder="15" class="narrow" />
+          <span>% 는</span>
+        </div>
+        <div class="result big" id="pct1-result" aria-live="polite">—</div>
+      </div>
+      <div class="card">
+        <h2>일부는 전체의 몇 %?</h2>
+        <div class="row inline-sentence">
+          <input type="text" inputmode="decimal" id="pct2-part" placeholder="7,500" />
+          <span>은</span>
+          <input type="text" inputmode="decimal" id="pct2-total" placeholder="50,000" />
+          <span>의</span>
+        </div>
+        <div class="result big" id="pct2-result" aria-live="polite">—</div>
+      </div>
+      <div class="card">
+        <h2>변화율 (증감률)</h2>
+        <div class="row inline-sentence">
+          <input type="text" inputmode="decimal" id="pct3-from" placeholder="이전 값" />
+          <span>→</span>
+          <input type="text" inputmode="decimal" id="pct3-to" placeholder="이후 값" />
+        </div>
+        <div class="result big" id="pct3-result" aria-live="polite">—</div>
+      </div>
+    </section>
+
+    <!-- 부가세 -->
+    <section class="panel" id="panel-vat" role="tabpanel">
+      <div class="card">
+        <h2>합계금액에서 부가세 분리</h2>
+        <label>합계금액 (부가세 포함)
+          <input type="text" inputmode="numeric" id="vat-total" placeholder="110,000" />
+        </label>
+        <div class="result" id="vat-total-result" aria-live="polite">금액을 입력하세요</div>
+      </div>
+      <div class="card">
+        <h2>공급가액에 부가세 더하기</h2>
+        <label>공급가액 (부가세 별도)
+          <input type="text" inputmode="numeric" id="vat-supply" placeholder="100,000" />
+        </label>
+        <div class="result" id="vat-supply-result" aria-live="polite">금액을 입력하세요</div>
+      </div>
+      <p class="note">부가가치세율 10% 기준</p>
+    </section>
+
+    <!-- 할인율 -->
+    <section class="panel" id="panel-discount" role="tabpanel">
+      <div class="card">
+        <h2>할인가 계산</h2>
+        <div class="row">
+          <label>정가 <input type="text" inputmode="numeric" id="disc-price" placeholder="30,000" /></label>
+          <label>할인율 (%) <input type="text" inputmode="decimal" id="disc-rate" placeholder="20" /></label>
+        </div>
+        <div class="result" id="disc-result" aria-live="polite">정가와 할인율을 입력하세요</div>
+      </div>
+      <div class="card">
+        <h2>몇 % 할인된 거야?</h2>
+        <div class="row">
+          <label>정가 <input type="text" inputmode="numeric" id="disc2-orig" placeholder="30,000" /></label>
+          <label>판매가 <input type="text" inputmode="numeric" id="disc2-sale" placeholder="24,000" /></label>
+        </div>
+        <div class="result big" id="disc2-result" aria-live="polite">—</div>
+      </div>
+    </section>
+
+    <!-- 평수 -->
+    <section class="panel" id="panel-pyeong" role="tabpanel">
+      <div class="card">
+        <h2>평 ↔ 제곱미터</h2>
+        <div class="row">
+          <label>평 <input type="text" inputmode="decimal" id="py-pyeong" placeholder="25" /></label>
+          <label>㎡ <input type="text" inputmode="decimal" id="py-sqm" placeholder="82.64" /></label>
+        </div>
+        <p class="note">1평 = 3.305785㎡ · 어느 쪽이든 입력하면 반대쪽이 자동 계산됩니다</p>
+      </div>
+      <div class="card">
+        <h2>자주 찾는 평수</h2>
+        <table class="ref-table">
+          <thead><tr><th>평</th><th>㎡</th><th>참고</th></tr></thead>
+          <tbody>
+            <tr><td>10평</td><td>33.1㎡</td><td>원룸</td></tr>
+            <tr><td>18평</td><td>59.5㎡</td><td>소형 아파트</td></tr>
+            <tr><td>25평</td><td>82.6㎡</td><td>국민평형(전용 59㎡형 공급면적)</td></tr>
+            <tr><td>34평</td><td>112.4㎡</td><td>국민평형(전용 84㎡형 공급면적)</td></tr>
+            <tr><td>45평</td><td>148.8㎡</td><td>대형 아파트</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 단위 변환 -->
+    <section class="panel" id="panel-unit" role="tabpanel">
+      <div class="card">
+        <h2>단위 변환</h2>
+        <label>종류
+          <select id="unit-category"></select>
+        </label>
+        <div class="row">
+          <label>값 <input type="text" inputmode="decimal" id="unit-value" placeholder="1" /></label>
+          <label>단위
+            <select id="unit-from"></select>
+          </label>
+        </div>
+        <div class="result" id="unit-result" aria-live="polite">값을 입력하세요</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>A_JE 생활 계산기 · 브라우저에서만 동작하며 입력값은 어디에도 전송되지 않습니다</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
