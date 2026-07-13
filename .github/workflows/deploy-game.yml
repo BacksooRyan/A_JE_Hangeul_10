@@ -1,4 +1,4 @@
-name: Deploy site (game + life-calc) to GitHub Pages
+name: Deploy quickquoter.co.kr (life-calc + game) to GitHub Pages
 
 on:
   push:
@@ -36,16 +36,18 @@ jobs:
         working-directory: space-carrier-defense
         run: npm run build
 
-      - name: Add life-calc static app under /calc/
+      - name: Assemble site (life-calc at root, game at /game/)
         run: |
-          mkdir -p space-carrier-defense/dist/calc
-          cp -r life-calc/. space-carrier-defense/dist/calc/
+          mkdir -p _site/game
+          cp -r life-calc/. _site/
+          cp -r space-carrier-defense/dist/. _site/game/
+          echo "quickquoter.co.kr" > _site/CNAME
 
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: space-carrier-defense/dist
+          path: _site
 
   deploy:
     environment:
